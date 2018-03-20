@@ -125,6 +125,8 @@ const (
 	tlsHandshakeTimeoutBackendUsage      = "sets the TLS handshake timeout for backend connections"
 	maxIdleConnsBackendUsage             = "sets the maximum idle connections for all backend connections"
 	enableHopHeadersRemovalUsage         = "enables removal of Hop-Headers according to RFC-2616"
+
+	enableSwarmUsage = "enable swarm communication between nodes in a skipper fleet"
 )
 
 var (
@@ -208,6 +210,8 @@ var (
 	enableDualstackBackend          bool
 	tlsHandshakeTimeoutBackend      time.Duration
 	maxIdleConnsBackend             int
+
+	enableSwarm bool
 )
 
 func init() {
@@ -289,6 +293,7 @@ func init() {
 	flag.BoolVar(&enableDualstackBackend, "enable-dualstack-backend", true, enableDualstackBackendUsage)
 	flag.DurationVar(&tlsHandshakeTimeoutBackend, "tls-timeout-backend", defaultTLSHandshakeTimeoutBackend, tlsHandshakeTimeoutBackendUsage)
 	flag.IntVar(&maxIdleConnsBackend, "max-idle-connection-backend", defaultMaxIdleConnsBackend, maxIdleConnsBackendUsage)
+	flag.BoolVar(&enableSwarm, "enable-swarm", false, enableSwarmUsage)
 
 	flag.Parse()
 
@@ -409,6 +414,7 @@ func main() {
 		IdleTimeoutServer:                   idleTimeoutServer,
 		MaxHeaderBytes:                      maxHeaderBytes,
 		EnableConnMetricsServer:             enableConnMetricsServer,
+		EnableSwarm:                         enableSwarm,
 	}
 
 	if insecure {

@@ -29,6 +29,7 @@ import (
 	"github.com/zalando/skipper/proxy"
 	"github.com/zalando/skipper/ratelimit"
 	"github.com/zalando/skipper/routing"
+	"github.com/zalando/skipper/swarm"
 	"github.com/zalando/skipper/tracing"
 )
 
@@ -378,6 +379,10 @@ type Options struct {
 	// the last item of the string list of the X-Forwarded-For
 	// header, in this case you want to set this to true.
 	ReverseSourcePredicate bool
+
+	// EnableSwarm enables skipper fleet communication, required by e.g.
+	// the cluster ratelimiter
+	EnableSwarm bool
 }
 
 func createDataClients(o Options, auth innkeeper.Authentication) ([]routing.DataClient, error) {
@@ -635,13 +640,18 @@ func Run(o Options) error {
 		MaxIdleConns:           o.MaxIdleConnsBackend,
 	}
 
+	var theSwarm *swarm.Swarm
+	if o.EnableSwarm {
+		theSwarm = swarm.NewSwarm()
+	}
+
 	if o.EnableBreakers || len(o.BreakerSettings) > 0 {
 		proxyParams.CircuitBreakers = circuit.NewRegistry(o.BreakerSettings...)
 	}
 
 	if o.EnableRatelimiters || len(o.RatelimitSettings) > 0 {
 		log.Infof("enabled ratelimiters %v: %v", o.EnableRatelimiters, o.RatelimitSettings)
-		proxyParams.RateLimiters = ratelimit.NewRegistry(o.RatelimitSettings...)
+		proxyParams.RateLimiters = ratelimit.NewRegistry(theSwarm, o.RatelimitSettings...)
 	}
 
 	if o.DebugListener != "" {
