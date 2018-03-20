@@ -98,6 +98,7 @@ func MakeRegistry() filters.Registry {
 		circuit.NewDisableBreaker(),
 		ratelimit.NewLocalRatelimit(),
 		ratelimit.NewRatelimit(),
+		ratelimit.NewClusterRateLimit(),
 		ratelimit.NewDisableRatelimit(),
 		loadbalancer.NewDecide(),
 		script.NewLuaScript(),
