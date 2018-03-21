@@ -387,7 +387,14 @@ func newSkipperDialer(d net.Dialer) *skipperDialer {
 // or timeout, or a timeout from http, which is not in general
 // retrieable.
 func (dc *skipperDialer) DialContext(ctx stdlibcontext.Context, network, addr string) (net.Conn, error) {
+	span := ot.SpanFromContext(ctx)
+	if span != nil {
+		span.LogKV("dial_context", "start")
+	}
 	con, err := dc.f(ctx, network, addr)
+	if span != nil {
+		span.LogKV("dial_context", "done")
+	}
 	if err != nil {
 		return nil, &proxyError{
 			err:           err,
@@ -657,6 +664,8 @@ func (p *Proxy) makeBackendRequest(ctx *context) (*http.Response, *proxyError) {
 
 	response, err := p.roundTripper.RoundTrip(req)
 	if err != nil {
+		ext.Error.Set(proxySpan, true)
+		proxySpan.LogKV(`error`, err.Error())
 		if perr, ok := err.(*proxyError); ok {
 			p.log.Errorf("Failed to do backend roundtrip to %s: %v", ctx.route.Backend, perr)
 			//p.lb.AddHealthcheck(ctx.route.Backend)
@@ -666,16 +675,19 @@ func (p *Proxy) makeBackendRequest(ctx *context) (*http.Response, *proxyError) {
 			p.log.Errorf("net.Error during backend roundtrip to %s: timeout=%v temporary=%v: %v", ctx.route.Backend, nerr.Timeout(), nerr.Temporary(), err)
 			//p.lb.AddHealthcheck(ctx.route.Backend)
 			if nerr.Timeout() {
+				ext.HTTPStatusCode.Set(proxySpan, uint16(http.StatusGatewayTimeout))
 				return nil, &proxyError{
 					err:  err,
 					code: http.StatusGatewayTimeout,
 				}
 			} else if !nerr.Temporary() {
+				ext.HTTPStatusCode.Set(proxySpan, uint16(http.StatusServiceUnavailable))
 				return nil, &proxyError{
 					err:  err,
 					code: http.StatusServiceUnavailable,
 				}
 			} else {
+				ext.HTTPStatusCode.Set(proxySpan, uint16(http.StatusInternalServerError))
 				return nil, &proxyError{
 					err:  err,
 					code: http.StatusInternalServerError,
@@ -806,6 +818,9 @@ func (p *Proxy) do(ctx *context) error {
 	} else {
 		done, allow := p.checkBreaker(ctx)
 		if !allow {
+			if span := ot.SpanFromContext(ctx.Request().Context()); span != nil {
+				span.LogKV(`circuit_breaker`, `open`)
+			}
 			return errCircuitBreakerOpen
 		}
 
@@ -840,7 +855,7 @@ func (p *Proxy) do(ctx *context) error {
 				p.log.Infof("Successfully retry to %v, orig %v, code: %d", ctx.route.Backend, origRoute.Backend, rsp.StatusCode)
 			} else {
 				p.log.Errorf("Failed to do backend request to %s: %v", ctx.route.Backend, perr)
-				return perr.err
+				return perr
 			}
 		}
 
@@ -900,7 +915,15 @@ func (p *Proxy) errorResponse(ctx *context, err error) {
 
 	code := http.StatusInternalServerError
 	if ok && perr.code != 0 {
-		code = perr.code
+		if perr.code == -1 { // -1 == dial connection refused
+			code = http.StatusBadGateway
+		} else {
+			code = perr.code
+		}
+	}
+
+	if span := ot.SpanFromContext(ctx.Request().Context()); span != nil {
+		ext.HTTPStatusCode.Set(span, uint16(code))
 	}
 
 	if p.flags.Debug() {
