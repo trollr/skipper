@@ -38,6 +38,8 @@ const (
 	defaultRoutingUpdateBuffer = 1 << 5
 )
 
+const DefaultPluginDir = "./plugins"
+
 // Options to start skipper.
 type Options struct {
 
@@ -123,6 +125,10 @@ type Options struct {
 
 	// File containing static route definitions.
 	RoutesFile string
+
+	// File containing route definitions with file watch enabled. (For the skipper
+	// command this option is used when starting it with the -routes-file flag.)
+	WatchRoutesFile string
 
 	// InlineRoutes can define routes as eskip text.
 	InlineRoutes string
@@ -350,8 +356,24 @@ type Options struct {
 	// OpenTracing enables opentracing
 	OpenTracing []string
 
-	// PluginDir defines the dir to load plugins from
+	// PluginDir defines the directory to load plugins from, DEPRECATED, use PluginDirs
 	PluginDir string
+	// PluginDirs defines the directories to load plugins from
+	PluginDirs []string
+
+	// FilterPlugins loads additional filters from modules. The first value in each []string
+	// needs to be the plugin name (as on disk, without path, without ".so" suffix). The
+	// following values are passed as arguments to the plugin while loading, see also
+	// https://zalando.github.io/skipper/plugins/
+	FilterPlugins [][]string
+
+	// PredicatePlugins loads additional predicates from modules. See above for FilterPlugins
+	// what the []string should contain.
+	PredicatePlugins [][]string
+
+	// DataClientPlugins loads additional data clients from modules. See above for FilterPlugins
+	// what the []string should contain.
+	DataClientPlugins [][]string
 
 	// DefaultHTTPStatus is the HTTP status used when no routes are found
 	// for a request.
@@ -395,6 +417,11 @@ func createDataClients(o Options, auth innkeeper.Authentication) ([]routing.Data
 			return nil, err
 		}
 
+		clients = append(clients, f)
+	}
+
+	if o.WatchRoutesFile != "" {
+		f := eskipfile.Watch(o.WatchRoutesFile)
 		clients = append(clients, f)
 	}
 
@@ -554,6 +581,10 @@ func Run(o Options) error {
 	var lbInstance *loadbalancer.LB
 	if o.LoadBalancerHealthCheckInterval != 0 {
 		lbInstance = loadbalancer.New(o.LoadBalancerHealthCheckInterval)
+	}
+
+	if err := findAndLoadPlugins(&o); err != nil {
+		return err
 	}
 
 	// create data clients
@@ -726,8 +757,9 @@ func Run(o Options) error {
 		log.Infoln("Metrics are disabled")
 	}
 
+	o.PluginDirs = append(o.PluginDirs, o.PluginDir)
 	if len(o.OpenTracing) > 0 {
-		tracer, err := tracing.LoadPlugin(o.PluginDir, o.OpenTracing)
+		tracer, err := tracing.LoadTracingPlugin(o.PluginDirs, o.OpenTracing)
 		if err != nil {
 			return err
 		}
@@ -735,7 +767,7 @@ func Run(o Options) error {
 	} else {
 		// always have a tracer available, so filter authors can rely on the
 		// existence of a tracer
-		proxyParams.OpenTracer, _ = tracing.LoadPlugin(o.PluginDir, []string{"noop"})
+		proxyParams.OpenTracer, _ = tracing.LoadTracingPlugin(o.PluginDirs, []string{"noop"})
 	}
 
 	// create the proxy

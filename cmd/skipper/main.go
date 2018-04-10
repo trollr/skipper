@@ -67,7 +67,7 @@ const (
 	oauthURLUsage                  = "OAuth2 URL for Innkeeper authentication"
 	oauthCredentialsDirUsage       = "directory where oauth credentials are stored: client.json and user.json"
 	oauthScopeUsage                = "the whitespace separated list of oauth scopes"
-	routesFileUsage                = "file containing static route definitions"
+	routesFileUsage                = "file containing route definitions"
 	inlineRoutesUsage              = "inline routes in eskip format"
 	sourcePollTimeoutUsage         = "polling timeout of the routing data sources, in milliseconds"
 	insecureUsage                  = "flag indicating to ignore the verification of the TLS certificates of the backend services"
@@ -210,8 +210,10 @@ var (
 	enableDualstackBackend          bool
 	tlsHandshakeTimeoutBackend      time.Duration
 	maxIdleConnsBackend             int
-
 	enableSwarm bool
+	filterPlugins                   pluginFlags
+	predicatePlugins                pluginFlags
+	dataclientPlugins               pluginFlags
 )
 
 func init() {
@@ -275,7 +277,7 @@ func init() {
 	flag.BoolVar(&enableRatelimiters, "enable-ratelimits", false, enableRatelimitUsage)
 	flag.Var(&ratelimits, "ratelimits", ratelimitUsage)
 	flag.StringVar(&openTracing, "opentracing", "noop", opentracingUsage)
-	flag.StringVar(&pluginDir, "plugindir", ".", pluginDirUsage)
+	flag.StringVar(&pluginDir, "plugindir", "", pluginDirUsage)
 	flag.IntVar(&defaultHTTPStatus, "default-http-status", http.StatusNotFound, defaultHTTPStatusUsage)
 	flag.BoolVar(&suppressRouteUpdateLogs, "suppress-route-update-logs", false, suppressRouteUpdateLogsUsage)
 	flag.BoolVar(&enablePrometheusMetrics, "enable-prometheus-metrics", false, enablePrometheusMetricsUsage)
@@ -294,6 +296,9 @@ func init() {
 	flag.DurationVar(&tlsHandshakeTimeoutBackend, "tls-timeout-backend", defaultTLSHandshakeTimeoutBackend, tlsHandshakeTimeoutBackendUsage)
 	flag.IntVar(&maxIdleConnsBackend, "max-idle-connection-backend", defaultMaxIdleConnsBackend, maxIdleConnsBackendUsage)
 	flag.BoolVar(&enableSwarm, "enable-swarm", false, enableSwarmUsage)
+	flag.Var(&filterPlugins, "filter-plugin", filterPluginUsage)
+	flag.Var(&predicatePlugins, "predicate-plugin", predicatePluginUsage)
+	flag.Var(&dataclientPlugins, "dataclient-plugin", dataclientPluginUsage)
 
 	flag.Parse()
 
@@ -356,7 +361,7 @@ func main() {
 		KubernetesIngressClass:              kubernetesIngressClass,
 		InnkeeperUrl:                        innkeeperURL,
 		SourcePollTimeout:                   time.Duration(sourcePollTimeout) * time.Millisecond,
-		RoutesFile:                          routesFile,
+		WatchRoutesFile:                     routesFile,
 		InlineRoutes:                        inlineRoutes,
 		IdleConnectionsPerHost:              idleConnsPerHost,
 		CloseIdleConnsPeriod:                time.Duration(clsic) * time.Second,
@@ -401,7 +406,7 @@ func main() {
 		EnableRatelimiters:                  enableRatelimiters,
 		RatelimitSettings:                   ratelimits,
 		OpenTracing:                         strings.Split(openTracing, " "),
-		PluginDir:                           pluginDir,
+		PluginDirs:                          []string{skipper.DefaultPluginDir},
 		DefaultHTTPStatus:                   defaultHTTPStatus,
 		SuppressRouteUpdateLogs:             suppressRouteUpdateLogs,
 		EnablePrometheusMetrics:             enablePrometheusMetrics,
@@ -415,6 +420,13 @@ func main() {
 		MaxHeaderBytes:                      maxHeaderBytes,
 		EnableConnMetricsServer:             enableConnMetricsServer,
 		EnableSwarm:                         enableSwarm,
+		FilterPlugins:                       filterPlugins.Get(),
+		PredicatePlugins:                    predicatePlugins.Get(),
+		DataClientPlugins:                   dataclientPlugins.Get(),
+	}
+
+	if pluginDir != "" {
+		options.PluginDirs = append(options.PluginDirs, pluginDir)
 	}
 
 	if insecure {
