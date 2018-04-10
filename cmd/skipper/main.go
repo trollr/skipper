@@ -210,7 +210,7 @@ var (
 	enableDualstackBackend          bool
 	tlsHandshakeTimeoutBackend      time.Duration
 	maxIdleConnsBackend             int
-	enableSwarm bool
+	enableSwarm                     bool
 	filterPlugins                   pluginFlags
 	predicatePlugins                pluginFlags
 	dataclientPlugins               pluginFlags
